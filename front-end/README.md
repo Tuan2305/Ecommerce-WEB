@@ -1,6 +1,8 @@
 # Shop Web Frontend
 
 A modern e-commerce website frontend built with React, Tailwind CSS, and React Router.
+
+#### Reup: https://github.com/thenamvn/frontend_shop-web
 ## Preview:
 ### Home:
 ![image](https://github.com/user-attachments/assets/cd1be82e-a333-4087-813e-8d75e2e7ac27)
