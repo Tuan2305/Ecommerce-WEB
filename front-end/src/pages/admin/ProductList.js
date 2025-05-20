@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiEdit, FiTrash2, FiEye, FiSearch, FiPlus } from 'react-icons/fi';
+import axios from 'axios';
 
 const ProductList = () => {
   const [products, setProducts] = useState([]);
@@ -11,59 +12,124 @@ const ProductList = () => {
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
 
+  const [totalPages, setTotalPages] = useState(0);
+  const [pageNumber, setPageNumber] = useState(0);
+  const [category, setCategory] = useState('all');
+  const [categories, setCategories] = useState([]);
+  const [status, setStatus] = useState('all');
+
+  // Gọn lại admin state
+  const admin = JSON.parse(localStorage.getItem('admin')) || null;
+
   useEffect(() => {
-    // Fetch products from API
     const fetchProducts = async () => {
       try {
-        // Simulate API call delay
-        setTimeout(() => {
-          // Mock data for products
-          const mockProducts = Array.from({ length: 35 }, (_, i) => ({
-            id: i + 1,
-            name: `Sản phẩm ${i + 1}`,
-            category: ['Áo thun', 'Quần jean', 'Váy', 'Áo khoác', 'Phụ kiện'][Math.floor(Math.random() * 5)],
-            price: Math.floor(Math.random() * 500000) + 100000,
-            stock: Math.floor(Math.random() * 100),
-            status: Math.random() > 0.2 ? 'active' : 'inactive',
-            createdAt: new Date(Date.now() - Math.floor(Math.random() * 10000000000)).toLocaleDateString('vi-VN'),
-          }));
-          
-          setProducts(mockProducts);
-          setLoading(false);
-        }, 800);
+        setLoading(true);
+        
+        // Tạo đối tượng params chỉ với các giá trị không phải null/undefined
+        const params = {
+          page: pageNumber,
+          size: productsPerPage,
+          sort: `${sortField},${sortDirection}`,
+        };
+        if (category && category !== 'all') params.category = category;
+        if (searchQuery) params.keyword = searchQuery;
+        
+        const response = await axios.get('http://localhost:8080/api/sellers/products', {
+          params,
+          headers: {
+            'Authorization': `Bearer ${admin?.jwt}`
+          }
+        });
+        
+        // Kiểm tra cấu trúc phản hồi
+        if (response.data && response.data.content) {
+          setProducts(response.data.content);
+          setTotalPages(response.data.totalPages);
+        } else if (Array.isArray(response.data)) {
+          // Trường hợp API trả về danh sách sản phẩm trực tiếp
+          setProducts(response.data);
+          setTotalPages(Math.ceil(response.data.length / productsPerPage));
+        } else {
+          // Trường hợp API trả về cấu trúc khác
+          console.error('Unexpected API response format:', response.data);
+          setProducts([]);
+          setTotalPages(0);
+        }
+        
+        setLoading(false);
       } catch (error) {
         console.error('Error fetching products:', error);
         setLoading(false);
+        setProducts([]);
       }
     };
     
     fetchProducts();
+  }, [pageNumber, productsPerPage, searchQuery, category, sortField, sortDirection, admin?.jwt]);
+  
+
+  useEffect(() => {
+  // Thêm hàm lấy danh mục
+  const fetchCategories = async () => {
+    try {
+      const response = await axios.get('http://localhost:8080/api/categories');
+      setCategories(response.data || []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+  
+  fetchCategories();
   }, []);
 
   // Sort products
   const sortedProducts = [...products].sort((a, b) => {
-    if (sortField === 'price' || sortField === 'stock') {
+    if (sortField === 'sellingPrice' || sortField === 'quantity') {
       return sortDirection === 'asc' 
         ? a[sortField] - b[sortField]
         : b[sortField] - a[sortField];
-    } else {
+    } else if (sortField === 'title') {
       return sortDirection === 'asc'
-        ? a[sortField].localeCompare(b[sortField])
-        : b[sortField].localeCompare(a[sortField]);
+        ? a.title.localeCompare(b.title)
+        : b.title.localeCompare(a.title);
+    } else if (sortField === 'category') {
+      const catA = a.category?.categoryId || '';
+      const catB = b.category?.categoryId || '';
+      return sortDirection === 'asc'
+        ? catA.localeCompare(catB)
+        : catB.localeCompare(catA);
+    } else {
+      return 0;
     }
   });
 
   // Filter products based on search query
-  const filteredProducts = sortedProducts.filter(product => 
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProducts = sortedProducts.filter(product => {
+    const titleMatch = product.title?.toLowerCase().includes(searchQuery.toLowerCase());
+    const categoryMatch = category === 'all' || product.category?.id?.toString() === category;
+    const statusMatch = status === 'all' || 
+      (status === 'active' && product.quantity > 0) || 
+      (status === 'inactive' && product.quantity === 0);
+
+    return titleMatch && categoryMatch && statusMatch;
+  });
+  
 
   // Pagination logic
-  const indexOfLastProduct = currentPage * productsPerPage;
-  const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
-  const currentProducts = filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
-  const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+  // const indexOfLastProduct = currentPage * productsPerPage;
+  // const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
+  // const currentProducts = filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
+  // // const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+
+  const currentProducts = filteredProducts;
+
+  // Sửa hàm xử lý phân trang
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+    setPageNumber(newPage - 1);  };
+
+
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -74,10 +140,20 @@ const ProductList = () => {
     }
   };
 
-  const handleDeleteProduct = (id) => {
+  const handleDeleteProduct = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) {
-      // In a real app, you would call an API to delete the product
-      setProducts(products.filter(product => product.id !== id));
+      try {
+        await axios.delete(`http://localhost:8080/api/sellers/products/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${admin?.jwt}`
+          }
+        });
+        // Cập nhật danh sách sau khi xóa
+        setProducts(products.filter(product => product.id !== id));
+      } catch (error) {
+        console.error('Lỗi khi xóa sản phẩm:', error);
+        alert('Không thể xóa sản phẩm. Vui lòng thử lại sau.');
+      }
     }
   };
 
@@ -90,7 +166,7 @@ const ProductList = () => {
     pages.push(
       <button
         key="prev"
-        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+        onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
         disabled={currentPage === 1}
         className={`px-3 py-1 rounded-md ${
           currentPage === 1 
@@ -113,7 +189,7 @@ const ProductList = () => {
         pages.push(
           <button
             key={i}
-            onClick={() => setCurrentPage(i)}
+             onClick={() => handlePageChange(i)} 
             className={`px-3 py-1 rounded-md ${
               currentPage === i
                 ? 'bg-primary text-white'
@@ -140,7 +216,7 @@ const ProductList = () => {
     pages.push(
       <button
         key="next"
-        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+        onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
         disabled={currentPage === totalPages}
         className={`px-3 py-1 rounded-md ${
           currentPage === totalPages 
@@ -190,18 +266,26 @@ const ProductList = () => {
           <div className="flex space-x-2">
             <select
               className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-              defaultValue="all"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
             >
               <option value="all">Tất cả danh mục</option>
-              <option value="ao-thun">Áo thun</option>
+              {/* <option value="ao-thun">Áo thun</option>
               <option value="quan-jean">Quần jean</option>
               <option value="vay">Váy</option>
               <option value="ao-khoac">Áo khoác</option>
-              <option value="phu-kien">Phụ kiện</option>
-            </select>
+              <option value="phu-kien">Phụ kiện</option> */}
+              {categories.map(cat => (
+              <option key={cat.id} value={cat.id || cat.categoryId}>
+              {cat.name}
+              </option>
+            ))}
+
+              </select>
             <select
               className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-              defaultValue="all"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
             >
               <option value="all">Tất cả trạng thái</option>
               <option value="active">Đang bán</option>
@@ -237,11 +321,11 @@ const ProductList = () => {
                 <th 
                   scope="col" 
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('name')}
+                  onClick={() => handleSort('title')}
                 >
                   <div className="flex items-center">
                     Sản phẩm
-                    {sortField === 'name' && (
+                    {sortField === 'title' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </div>
@@ -307,24 +391,22 @@ const ProductList = () => {
                       {product.id}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.name}
+                      {product.title}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.category}
+                     {product.category?.name || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.price.toLocaleString()}đ
+                      {product.sellingPrice?.toLocaleString()}đ
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.stock}
+                      {product.quantity || 0} 
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        product.status === 'active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {product.status === 'active' ? 'Đang bán' : 'Ngừng bán'}
+                          product.quantity > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {product.quantity > 0 ? 'Đang bán' : 'Ngừng bán'}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">

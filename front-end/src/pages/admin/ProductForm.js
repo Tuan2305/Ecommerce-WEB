@@ -17,7 +17,7 @@ const ProductForm = () => {
   const [product, setProduct] = useState({
     title: '',
     description: '',
-    mrpPrice: '',
+    price: '',
     sellingPrice: '',
     quantity: '',
     color: '',
@@ -208,7 +208,7 @@ const ProductForm = () => {
       const productData = {
         title: product.title,
         description: product.description,
-        mrpPrice: Number(product.mrpPrice),
+        price: Number(product.price),
         sellingPrice: Number(product.sellingPrice),
         quantity: Number(product.quantity),
         color: product.color,
