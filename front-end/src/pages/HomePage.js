@@ -179,19 +179,48 @@ const HomePage = () => {
         <h2 className="text-2xl font-bold mb-6">Danh mục nổi bật</h2>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {['Áo thun', 'Quần jean', 'Váy đầm', 'Đồ thể thao', 'Áo khoác', 'Phụ kiện'].map((category, index) => (
+          {[
+            {
+              name: 'Áo thun',
+              image: 'https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?auto=format&fit=crop&w=200&h=200&q=80'
+            },
+            {
+              name: 'Quần jean',
+              image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=200&h=200&q=80'
+            },
+            {
+              name: 'Váy đầm',
+              image: 'https://images.unsplash.com/photo-1612336307429-8a898d10e223?auto=format&fit=crop&w=200&h=200&q=80'
+            },
+            {
+              name: 'Đồ thể thao',
+              image: 'https://images.unsplash.com/photo-1565383690591-1ee1b6581048?auto=format&fit=crop&w=200&h=200&q=80'
+            },
+            {
+              name: 'Áo khoác',
+              image: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=200&h=200&q=80'
+            },
+            {
+              name: 'Phụ kiện',
+              image: 'https://images.unsplash.com/photo-1508296695146-257a814070b4?auto=format&fit=crop&w=200&h=200&q=80'
+            }
+          ].map((category, index) => (
             <div 
               key={index}
-              className="bg-gray-100 rounded-md p-4 flex flex-col items-center justify-center transition hover:shadow-md"
+              className="bg-gray-100 rounded-md p-4 flex flex-col items-center justify-center transition hover:shadow-md hover:bg-gray-50 cursor-pointer"
             >
-              <div className="w-12 h-12 mb-3 bg-white rounded-full flex items-center justify-center">
+              <div className="w-16 h-16 mb-3 overflow-hidden rounded-full">
                 <img 
-                  src={`https://placehold.co/40?text=${index + 1}`}
-                  alt={category}
-                  className="w-8 h-8 object-contain"
+                  src={category.image}
+                  alt={category.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = `https://placehold.co/100?text=${category.name[0]}`;
+                  }}
                 />
               </div>
-              <span className="text-sm font-medium">{category}</span>
+              <span className="text-sm font-medium">{category.name}</span>
             </div>
           ))}
         </div>
