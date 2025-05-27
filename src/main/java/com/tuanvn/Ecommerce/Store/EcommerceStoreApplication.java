@@ -11,3 +11,6 @@ public class EcommerceStoreApplication {
 	}
 
 }
+// ...existing code...
+// This is a sample comment for testing commit
+// ...existing code...
