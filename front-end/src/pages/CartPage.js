@@ -1,35 +1,126 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { FiTrash2, FiMinus, FiPlus, FiShoppingBag } from 'react-icons/fi';
 import { useCart } from '../contexts/CartContext';
+import axios from 'axios';
 
 const CartPage = () => {
-  const { cartItems, cartTotal, updateQuantity, removeFromCart, clearCart } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, clearCart, fetchCartFromServer } = useCart();
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
   const [discount, setDiscount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const navigate = useNavigate();
   
   // Phí vận chuyển mẫu
   const shippingFee = cartItems.length > 0 ? 30000 : 0;
+  
+  // Tính tổng giá trị giỏ hàng (dùng sellingPrice/price giống backend)
+  const calculateSubtotal = () => {
+    return cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  };
+
+  // Tính tổng giá gốc (nếu có originalPrice)
+  const calculateOriginalTotal = () => {
+    return cartItems.reduce((sum, item) => {
+      const originalPrice = item.originalPrice || item.price;
+      return sum + originalPrice * item.quantity;
+    }, 0);
+  };
+
+  // Tính tiền được giảm từ sản phẩm (chênh lệch giữa giá gốc và giá bán)
+  const calculateProductDiscount = () => {
+    const originalTotal = calculateOriginalTotal();
+    const subtotal = calculateSubtotal();
+    return originalTotal - subtotal;
+  };
+
+  // Tính tổng tiền cuối cùng
+  const calculateTotal = () => {
+    return calculateSubtotal() + shippingFee - discount;
+  };
+
+  // Tính phần trăm giảm giá tổng thể
+  const calculateDiscountPercentage = () => {
+    const originalTotal = calculateOriginalTotal();
+    if (originalTotal === 0) return 0;
+    
+    const totalDiscount = calculateProductDiscount() + discount;
+    return Math.round((totalDiscount / originalTotal) * 100);
+  };
+  
+  // Fetch cart data from server when component mounts
+  useEffect(() => {
+    const loadCart = async () => {
+      try {
+        await fetchCartFromServer();
+        setLoading(false);
+      } catch (err) {
+        setError('Không thể tải giỏ hàng. Vui lòng thử lại sau.');
+        setLoading(false);
+      }
+    };
+    
+    loadCart();
+  }, [fetchCartFromServer]);
   
   const applyCoupon = () => {
     // Giả lập kiểm tra mã giảm giá
     if (couponCode.toUpperCase() === 'SALE10') {
       setCouponApplied(true);
-      setDiscount(cartTotal * 0.1);
+      setDiscount(calculateSubtotal() * 0.1);
     } else {
       alert('Mã giảm giá không hợp lệ!');
     }
   };
-  
-  const calculateTotal = () => {
-    return cartTotal + shippingFee - discount;
+
+  const handleProceedToCheckout = () => {
+    // Lưu thông tin giỏ hàng vào localStorage để dùng khi thanh toán
+    const cartSummary = {
+      subtotal: calculateSubtotal(),
+      originalTotal: calculateOriginalTotal(),
+      productDiscount: calculateProductDiscount(),
+      couponDiscount: discount,
+      shippingFee: shippingFee,
+      total: calculateTotal()
+    };
+    
+    localStorage.setItem('cartSummary', JSON.stringify(cartSummary));
+    
+    // Kiểm tra đăng nhập trước khi chuyển đến trang thanh toán
+    const token = localStorage.getItem('jwt');
+    if (!token) {
+      navigate('/login', { state: { redirectTo: '/checkout' } });
+      return;
+    }
+    
+    // Nếu đã đăng nhập, chuyển đến trang thanh toán
+    navigate('/checkout');
   };
   
-  // Đây là vấn đề chính - phải sử dụng cartTotal từ context
-  const calculateSubtotal = () => {
-    return cartTotal;
-  };
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8 text-center">
+        <div className="text-red-500 mb-4">{error}</div>
+        <button 
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-primary text-white rounded hover:bg-secondary"
+        >
+          Thử lại
+        </button>
+      </div>
+    );
+  }
   
   if (cartItems.length === 0) {
     return (
@@ -48,6 +139,12 @@ const CartPage = () => {
       </div>
     );
   }
+  
+  // Tính các giá trị cho hiển thị
+  const subtotal = calculateSubtotal();
+  const productDiscount = calculateProductDiscount();
+  const totalAmount = calculateTotal();
+  const discountPercentage = calculateDiscountPercentage();
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -170,29 +267,58 @@ const CartPage = () => {
           </div>
         </div>
         
-        {/* Tóm tắt đơn hàng */}
+        {/* Tóm tắt đơn hàng - Cập nhật giao diện giống backend */}
         <div className="lg:w-1/3">
           <div className="border rounded-lg p-6">
             <h2 className="text-lg font-bold mb-4">Tóm tắt đơn hàng</h2>
             
             <div className="space-y-3 mb-6">
+              {/* Tổng tiền gốc sản phẩm */}
               <div className="flex justify-between">
-                <span>Tạm tính ({cartItems.length} sản phẩm):</span>
-                <span className="font-medium">{calculateSubtotal().toLocaleString()}đ</span>
+                <span>Tạm tính ({cartItems.reduce((sum, item) => sum + item.quantity, 0)} sản phẩm):</span>
+                <span className="font-medium">{calculateOriginalTotal().toLocaleString()}đ</span>
               </div>
+              
+              {/* Giảm giá từ sản phẩm */}
+              {productDiscount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Giảm giá sản phẩm:</span>
+                  <span className="font-medium">-{productDiscount.toLocaleString()}đ</span>
+                </div>
+              )}
+              
+              {/* Tiền sản phẩm sau giảm giá */}
+              <div className="flex justify-between font-medium">
+                <span>Tiền hàng:</span>
+                <span>{subtotal.toLocaleString()}đ</span>
+              </div>
+              
+              {/* Phí vận chuyển */}
               <div className="flex justify-between">
                 <span>Phí vận chuyển:</span>
                 <span className="font-medium">{shippingFee.toLocaleString()}đ</span>
               </div>
+              
+              {/* Giảm giá từ mã coupon */}
               {discount > 0 && (
                 <div className="flex justify-between text-green-600">
-                  <span>Giảm giá:</span>
+                  <span>Mã giảm giá:</span>
                   <span className="font-medium">-{discount.toLocaleString()}đ</span>
                 </div>
               )}
+              
+              {/* Hiển thị % giảm giá tổng hợp nếu có */}
+              {discountPercentage > 0 && (
+                <div className="flex justify-between bg-yellow-50 p-2 rounded-md text-yellow-700">
+                  <span>Tiết kiệm:</span>
+                  <span className="font-medium">{discountPercentage}%</span>
+                </div>
+              )}
+              
+              {/* Tổng cộng */}
               <div className="border-t pt-3 flex justify-between font-bold">
-                <span>Tổng cộng:</span>
-                <span className="text-lg text-primary">{calculateTotal().toLocaleString()}đ</span>
+                <span>Tổng thanh toán:</span>
+                <span className="text-lg text-primary">{totalAmount.toLocaleString()}đ</span>
               </div>
             </div>
             
@@ -227,10 +353,12 @@ const CartPage = () => {
             </div>
             
             {/* Thanh toán */}
-            <button className="w-full py-3 bg-primary text-white font-medium rounded hover:bg-secondary transition">
+            <button 
+              onClick={handleProceedToCheckout}
+              className="w-full py-3 bg-primary text-white font-medium rounded hover:bg-secondary transition flex justify-center items-center"
+            >
               Tiến hành thanh toán
             </button>
-            
             <div className="mt-4 text-xs text-gray-500 text-center">
               Bằng cách đặt hàng, bạn đồng ý với
               <Link to="/terms" className="text-primary hover:underline mx-1">
@@ -248,10 +376,18 @@ const CartPage = () => {
           <div className="border rounded-lg p-6 mt-4">
             <h3 className="font-medium mb-3">Chúng tôi chấp nhận</h3>
             <div className="flex flex-wrap gap-2">
-              <div className="w-12 h-8 bg-gray-100 rounded"></div>
-              <div className="w-12 h-8 bg-gray-100 rounded"></div>
-              <div className="w-12 h-8 bg-gray-100 rounded"></div>
-              <div className="w-12 h-8 bg-gray-100 rounded"></div>
+              <div className="w-12 h-8 flex items-center justify-center border rounded">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" alt="Visa" className="h-4" />
+              </div>
+              <div className="w-12 h-8 flex items-center justify-center border rounded">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" alt="Mastercard" className="h-4" />
+              </div>
+              <div className="w-12 h-8 flex items-center justify-center border rounded">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/d/d1/Stripe_logo%2C_revised_2016.png" alt="Stripe" className="h-4" />
+              </div>
+              <div className="w-12 h-8 flex items-center justify-center border rounded">
+                <span className="text-xs font-medium">COD</span>
+              </div>
             </div>
           </div>
         </div>

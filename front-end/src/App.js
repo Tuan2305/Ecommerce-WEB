@@ -9,6 +9,8 @@ import RegisterPage from './pages/RegisterPage';
 import AccountPage from './pages/AccountPage';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailPage from './pages/OrderDetailPage';
+import CheckoutPage from './pages/CheckoutPage';
+import PaymentSuccessPage from './pages/PaymentSuccessPage';
 import Notification from './components/Notification';
 import { CartProvider, useCart } from './contexts/CartContext';
 import { AuthProvider } from './contexts/AuthContext';
@@ -66,6 +68,8 @@ function AppContent() {
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/orders" element={<OrdersPage />} />
                 <Route path="/order/:id" element={<OrderDetailPage />} />
+                <Route path="/checkout" element={<CheckoutPage />} />
+                <Route path="/payment/stripe-success" element={<PaymentSuccessPage />} />
               </Routes>
             </main>
             <Footer />
