@@ -9,7 +9,7 @@ public class HomeController {
     @GetMapping("/ecommerceshop")
     public ApiResponse HomeControllerHandler(){
         ApiResponse apiResponse = new ApiResponse();
-        apiResponse.setMessage("hello world");
+        apiResponse.setMessage("hello");
 
         return apiResponse;
     }
