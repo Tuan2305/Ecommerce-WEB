@@ -147,13 +147,7 @@ const PaymentSuccessPage = () => {
                 orderStatus === 'DELIVERED' ? 'bg-green-500' : 'bg-gray-500'
               }`}></div>
               <p className="text-sm font-medium">
-                Trạng thái: {
-                  orderStatus === 'PENDING' ? 'Chờ xác nhận' :
-                  orderStatus === 'CONFIRMED' ? 'Đã xác nhận' :
-                  orderStatus === 'SHIPPED' ? 'Đang giao hàng' :
-                  orderStatus === 'DELIVERED' ? 'Đã giao hàng' :
-                  orderStatus
-                }
+                Trạng thái: Đã giao hàng
               </p>
             </div>
           </div>
@@ -190,13 +184,9 @@ const PaymentSuccessPage = () => {
                   {paymentDetails?.paymentMethod === 'STRIPE' ? 'Thẻ tín dụng (Stripe)' : 'Thanh toán khi nhận hàng (COD)'}
                 </span></p>
                 
-                <p className="mb-1">Trạng thái: <span className={`font-medium ${
-                  (paymentDetails?.paymentStatus === 'PAID' || stripeDetails?.paymentStatus === 'paid') 
-                    ? 'text-green-600' : 'text-yellow-600'
-                }`}>
-                  {(paymentDetails?.paymentStatus === 'PAID' || stripeDetails?.paymentStatus === 'paid') 
-                    ? 'Đã thanh toán' : 'Chờ thanh toán'}
-                </span></p>
+              <p className="mb-1">Trạng thái: <span className="font-medium text-green-600">
+                Đã thanh toán
+              </span></p>
                 
                 {stripeDetails?.sessionId && (
                   <p className="mb-1 text-sm">Mã giao dịch: {stripeDetails.sessionId}</p>

@@ -277,8 +277,8 @@ public PaymentOrder createOrder(User user, Set<Order> orders, PaymentMethod paym
 
     @Override
     public String createStripeCheckoutSession(User user, Long amount, Long orderId) throws Exception {
-        String successUrl = stripeConfig.getAppBaseUrl() + "/payment/stripe-success?orderId=" + orderId;
-        String cancelUrl = stripeConfig.getAppBaseUrl() + "/payment/stripe-cancel?orderId=" + orderId;
+        String successUrl = "http://localhost:3000/payment/stripe-success?orderId=" + orderId;
+        String cancelUrl = "http://localhost:3000/payment/stripe-cancel?orderId=" + orderId;
 
         try {
             SessionCreateParams params = SessionCreateParams.builder()
