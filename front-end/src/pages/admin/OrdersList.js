@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiEye, FiCalendar, FiSearch, FiFilter, FiCheck, FiX, FiTruck, FiPackage } from 'react-icons/fi';
+import axios from 'axios';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 
 const OrdersList = () => {
   const [orders, setOrders] = useState([]);
@@ -9,164 +11,68 @@ const OrdersList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [ordersPerPage] = useState(10);
   const [statusFilter, setStatusFilter] = useState('all');
+  const { admin } = useAdminAuth();
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
 
   useEffect(() => {
     // Fetch orders data
     const fetchOrders = async () => {
-      try {
-        // Simulating API call with timeout
-        setTimeout(() => {
-          // Mock data for orders
-          const mockOrders = [
-            {
-              id: 'DH00001',
-              customerName: 'Nguyễn Văn A',
-              email: 'nguyenvana@example.com',
-              phone: '0901234567',
-              total: 850000,
-              status: 'completed',
-              items: 3,
-              date: '2023-05-15T08:30:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00002',
-              customerName: 'Trần Thị B',
-              email: 'tranthib@example.com',
-              phone: '0912345678',
-              total: 450000,
-              status: 'shipping',
-              items: 2,
-              date: '2023-05-14T14:45:00',
-              paymentMethod: 'Banking'
-            },
-            {
-              id: 'DH00003',
-              customerName: 'Lê Văn C',
-              email: 'levanc@example.com',
-              phone: '0923456789',
-              total: 1250000,
-              status: 'processing',
-              items: 5,
-              date: '2023-05-14T10:15:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00004',
-              customerName: 'Phạm Thị D',
-              email: 'phamthid@example.com',
-              phone: '0934567890',
-              total: 350000,
-              status: 'cancelled',
-              items: 1,
-              date: '2023-05-13T16:20:00',
-              paymentMethod: 'Banking'
-            },
-            {
-              id: 'DH00005',
-              customerName: 'Hoàng Văn E',
-              email: 'hoangvane@example.com',
-              phone: '0945678901',
-              total: 750000,
-              status: 'completed',
-              items: 3,
-              date: '2023-05-12T09:10:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00006',
-              customerName: 'Vũ Thị F',
-              email: 'vuthif@example.com',
-              phone: '0956789012',
-              total: 550000,
-              status: 'processing',
-              items: 2,
-              date: '2023-05-11T11:30:00',
-              paymentMethod: 'Banking'
-            },
-            {
-              id: 'DH00007',
-              customerName: 'Đặng Văn G',
-              email: 'dangvang@example.com',
-              phone: '0967890123',
-              total: 950000,
-              status: 'shipping',
-              items: 4,
-              date: '2023-05-10T15:45:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00008',
-              customerName: 'Bùi Thị H',
-              email: 'buithih@example.com',
-              phone: '0978901234',
-              total: 450000,
-              status: 'completed',
-              items: 2,
-              date: '2023-05-09T13:20:00',
-              paymentMethod: 'Banking'
-            },
-            {
-              id: 'DH00009',
-              customerName: 'Ngô Văn I',
-              email: 'ngovani@example.com',
-              phone: '0989012345',
-              total: 650000,
-              status: 'cancelled',
-              items: 3,
-              date: '2023-05-08T10:10:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00010',
-              customerName: 'Dương Thị K',
-              email: 'duongthik@example.com',
-              phone: '0990123456',
-              total: 850000,
-              status: 'processing',
-              items: 3,
-              date: '2023-05-07T16:55:00',
-              paymentMethod: 'Banking'
-            },
-            {
-              id: 'DH00011',
-              customerName: 'Lý Văn L',
-              email: 'lyvanl@example.com',
-              phone: '0901234567',
-              total: 1150000,
-              status: 'shipping',
-              items: 6,
-              date: '2023-05-06T09:30:00',
-              paymentMethod: 'COD'
-            },
-            {
-              id: 'DH00012',
-              customerName: 'Trịnh Thị M',
-              email: 'trinhthim@example.com',
-              phone: '0912345678',
-              total: 350000,
-              status: 'completed',
-              items: 1,
-              date: '2023-05-05T14:15:00',
-              paymentMethod: 'Banking'
-            }
-          ];
-          
-          setOrders(mockOrders);
-          setLoading(false);
-        }, 800);
-      } catch (error) {
-        console.error('Error fetching orders:', error);
-        setLoading(false);
-      }
-    };
-    
-    fetchOrders();
-  }, []);
+    try {
+      const params = {
+        page: currentPage - 1, // API thường dùng page 0-indexed
+        size: ordersPerPage,
+        sort: `${sortConfig.key},${sortConfig.direction}`,
+        searchTerm: searchTerm || undefined,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        dateFrom: dateRange.from || undefined, 
+        dateTo: dateRange.to || undefined
+      };
 
-  // Sorting function
+      const response = await axios.get('http://localhost:8080/api/seller/orders', {
+        headers: {
+          'Authorization': `Bearer ${admin.jwt}`
+        },
+        params
+      });
+
+      console.log('API Response:', response.data);
+
+    if (response.data) {
+      if (Array.isArray(response.data)) {
+        // API trả về mảng trực tiếp
+        setOrders(response.data);
+        setTotalPages(1); // Chỉ 1 trang vì không có phân trang
+        setTotalElements(response.data.length);
+      } else if (response.data.content) {
+        // API trả về dạng phân trang
+        setOrders(response.data.content);
+        setTotalPages(response.data.totalPages || 0);
+        setTotalElements(response.data.totalElements || 0);
+      } else {
+        setOrders([]);
+        setTotalPages(0);
+        setTotalElements(0);
+      }
+    } else {
+      setOrders([]);
+      setTotalPages(0);
+      setTotalElements(0);
+    }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  fetchOrders();
+}, [admin, currentPage, ordersPerPage, sortConfig, searchTerm, statusFilter, dateRange]);
+ 
+// Sorting function
   const requestSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -203,7 +109,7 @@ const OrdersList = () => {
       case 'cancelled':
         return 'Đã hủy';
       default:
-        return 'Không xác định';
+        return 'Đã thanh toán';
     }
   };
 
@@ -224,13 +130,31 @@ const OrdersList = () => {
   };
 
   // Handle status update
-  const handleUpdateStatus = (orderId, newStatus) => {
+  const handleUpdateStatus = async (orderId, newStatus) => {
+    if (!admin || !admin.jwt) {
+      alert("Phiên đăng nhập đã hết hạn.");
+      return;
+    }
     if (window.confirm(`Bạn có chắc chắn muốn cập nhật trạng thái đơn hàng ${orderId} thành ${getStatusText(newStatus)}?`)) {
-      setOrders(
-        orders.map((order) =>
+      try {
+        await axios.patch(`http://localhost:8080/api/seller/orders/${orderId}/status`, {
+          status: newStatus
+        }, {
+          headers: {
+            'Authorization': `Bearer ${admin.jwt}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        // Cập nhật lại danh sách đơn hàng
+        const updatedOrders = orders.map((order) =>
           order.id === orderId ? { ...order, status: newStatus } : order
-        )
-      );
+        );
+        setOrders(updatedOrders);
+      } catch (error) {
+        console.error('Lỗi khi cập nhật trạng thái đơn hàng:', error);
+        alert('Không thể cập nhật trạng thái đơn hàng. Vui lòng thử lại sau.');
+      }
     }
   };
 
@@ -245,54 +169,6 @@ const OrdersList = () => {
       minute: '2-digit'
     });
   };
-
-  // Apply filters, search and sorting
-  let filteredOrders = [...orders];
-
-  // Apply status filter
-  if (statusFilter !== 'all') {
-    filteredOrders = filteredOrders.filter(order => order.status === statusFilter);
-  }
-
-  // Apply date range filter
-  if (dateRange.from) {
-    filteredOrders = filteredOrders.filter(order => new Date(order.date) >= new Date(dateRange.from));
-  }
-  if (dateRange.to) {
-    const toDate = new Date(dateRange.to);
-    toDate.setHours(23, 59, 59); // End of the day
-    filteredOrders = filteredOrders.filter(order => new Date(order.date) <= toDate);
-  }
-
-  // Apply search
-  if (searchTerm) {
-    const searchLower = searchTerm.toLowerCase();
-    filteredOrders = filteredOrders.filter(order => 
-      order.id.toLowerCase().includes(searchLower) ||
-      order.customerName.toLowerCase().includes(searchLower) ||
-      order.email.toLowerCase().includes(searchLower) ||
-      order.phone.includes(searchTerm)
-    );
-  }
-
-  // Apply sorting
-  if (sortConfig.key) {
-    filteredOrders.sort((a, b) => {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-  }
-
-  // Pagination
-  const indexOfLastOrder = currentPage * ordersPerPage;
-  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
-  const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
-  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
 
   // Generate page numbers
   const pageNumbers = [];
@@ -483,8 +359,8 @@ const OrdersList = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {currentOrders.length > 0 ? (
-                    currentOrders.map((order) => (
+                  {orders.length > 0 ? (
+                    orders.map((order) => (
                       <tr key={order.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {order.id}
@@ -498,7 +374,7 @@ const OrdersList = () => {
                           {formatDate(order.date)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                          {order.total.toLocaleString()}đ
+                          {(order.total || 0).toLocaleString()}đ
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(order.status)}`}>
@@ -506,8 +382,8 @@ const OrdersList = () => {
                             <span className="ml-1">{getStatusText(order.status)}</span>
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {order.paymentMethod === 'COD' ? 'Tiền mặt (COD)' : 'Chuyển khoản'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
+                          Đã thanh toán
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex justify-end items-center space-x-3">
@@ -562,17 +438,17 @@ const OrdersList = () => {
             </div>
             
             {/* Pagination */}
-            {filteredOrders.length > 0 && (
+            {totalElements > 0 && (
               <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
                 <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm text-gray-700">
-                      Hiển thị <span className="font-medium">{indexOfFirstOrder + 1}</span> đến{' '}
-                      <span className="font-medium">
-                        {Math.min(indexOfLastOrder, filteredOrders.length)}
-                      </span>{' '}
-                      của <span className="font-medium">{filteredOrders.length}</span> đơn hàng
-                    </p>
+                  <p className="text-sm text-gray-700">
+                    Hiển thị <span className="font-medium">{(currentPage - 1) * ordersPerPage + 1}</span> đến{' '}
+                    <span className="font-medium">
+                      {Math.min(currentPage * ordersPerPage, totalElements)}
+                    </span>{' '}
+                    của <span className="font-medium">{totalElements}</span> đơn hàng
+                  </p>
                   </div>
                   <div>
                     <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">

@@ -14,74 +14,44 @@ const OrderDetail = () => {
   useEffect(() => {
     const fetchOrderDetails = async () => {
       try {
-        // Simulate API call
-        setTimeout(() => {
-          // Mock data for demonstration
-          const mockOrder = {
-            id: id,
-            customerName: 'Nguyễn Văn A',
-            email: 'nguyenvana@example.com',
-            phone: '0901234567',
-            status: 'processing',
-            date: '2023-05-15T08:30:00',
-            paymentMethod: 'COD',
-            paymentStatus: 'pending',
-            shippingAddress: {
-              name: 'Nguyễn Văn A',
-              phone: '0901234567',
-              address: '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh'
-            },
-            items: [
-              {
-                id: 1,
-                name: 'Áo thun unisex form rộng',
-                variant: 'Trắng - Size L',
-                price: 150000,
-                quantity: 2,
-                image: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=300&q=80'
-              },
-              {
-                id: 2,
-                name: 'Quần jean nam ống rộng',
-                variant: 'Xanh đậm - Size 32',
-                price: 480000,
-                quantity: 1,
-                image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=300&q=80'
-              },
-              {
-                id: 3,
-                name: 'Giày thể thao nam',
-                variant: 'Trắng - Size 42',
-                price: 650000,
-                quantity: 1,
-                image: 'https://images.unsplash.com/photo-1460353581641-37baddab0fa2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=300&q=80'
-              }
-            ],
-            subtotal: 1430000,
-            shippingFee: 30000,
-            discount: 0,
-            total: 1460000,
-            notes: 'Giao hàng trong giờ hành chính, gọi điện trước khi giao.',
-            timeline: [
-              {
-                status: 'created',
-                date: '2023-05-15T08:30:00',
-                note: 'Đơn hàng được tạo'
-              }
-            ]
-          };
-          
-          setOrder(mockOrder);
-          setLoading(false);
-        }, 800);
+        // Kiểm tra xem có JWT token không
+        if (!admin || !admin.jwt) {
+          console.error('Không có token xác thực. Vui lòng đăng nhập lại.');
+          navigate('/admin/login');
+          return;
+        }
+
+        // Gọi API để lấy thông tin chi tiết đơn hàng
+        const response = await axios.get(`http://localhost:8080/api/seller/orders/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${admin.jwt}`
+          }
+        });
+
+        console.log('Order Details API Response:', response.data);
+
+        // Kiểm tra và set dữ liệu
+        if (response.data) {
+          setOrder(response.data);
+        } else {
+          console.error('Không có dữ liệu đơn hàng từ API');
+        }
       } catch (error) {
         console.error('Error fetching order details:', error);
+        // Hiển thị thông báo lỗi nếu cần
+        if (error.response && error.response.status === 404) {
+          alert('Không tìm thấy đơn hàng này!');
+        } else {
+          alert('Có lỗi xảy ra khi tải thông tin đơn hàng. Vui lòng thử lại sau.');
+        }
+      } finally {
         setLoading(false);
       }
     };
     
     fetchOrderDetails();
-  }, [id]);
+  }, [id, admin, navigate]);
+
 
   const handleStatusChange = async (newStatus) => {
     setActionType(newStatus);
@@ -153,8 +123,16 @@ const OrderDetail = () => {
       case 'cancelled':
         return 'Đã hủy';
       default:
-        return 'Không xác định';
+        return 'Đã thanh toán';
     }
+  };
+
+  const getPaymentStatusText = (paymentStatus) => {
+    return 'Đã thanh toán';
+  };
+
+  const getPaymentStatusClass = (status) => {
+    return 'text-green-600';
   };
 
   const getStatusIcon = (status) => {
@@ -301,7 +279,7 @@ const OrderDetail = () => {
           </div>
           <div className="mt-3 sm:mt-0 text-sm">
             <span className="font-semibold text-gray-700">Phương thức thanh toán:</span>{' '}
-            <span className="text-gray-600">{order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng (COD)' : 'Chuyển khoản ngân hàng'}</span>
+            <span className={getPaymentStatusClass(order.paymentStatus)}>{getPaymentStatusText(order.paymentStatus)}</span>
             <br />
             <span className="font-semibold text-gray-700">Trạng thái thanh toán:</span>{' '}
             <span className={order.paymentStatus === 'paid' ? 'text-green-600' : 'text-yellow-600'}>
@@ -543,9 +521,7 @@ const OrderDetail = () => {
             <div className="space-y-3">
               <div>
                 <p className="text-sm text-gray-500">Phương thức thanh toán</p>
-                <p className="text-base font-medium">
-                  {order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng (COD)' : 'Chuyển khoản ngân hàng'}
-                </p>
+                <p className={`text-base font-medium ${getPaymentStatusClass(order.paymentStatus)}`}>{getPaymentStatusText(order.paymentStatus)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Trạng thái thanh toán</p>
