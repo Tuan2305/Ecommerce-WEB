@@ -3,15 +3,14 @@ package com.tuanvn.Ecommerce.Store.service.impl;
 import com.tuanvn.Ecommerce.Store.domain.OrderStatus;
 import com.tuanvn.Ecommerce.Store.domain.PaymentStatus;
 import com.tuanvn.Ecommerce.Store.modal.*;
-import com.tuanvn.Ecommerce.Store.repository.AddressRepository;
-import com.tuanvn.Ecommerce.Store.repository.OrderItemRepository;
-import com.tuanvn.Ecommerce.Store.repository.OrderRepository;
+import com.tuanvn.Ecommerce.Store.repository.*;
 import com.tuanvn.Ecommerce.Store.request.AddItemRequest;
 import com.tuanvn.Ecommerce.Store.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.weaver.ast.Or;
 import org.springframework.stereotype.Service;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -23,11 +22,14 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final AddressRepository addressRepository;
     private final OrderItemRepository orderItemRepository;
-
-    public OrderServiceImpl(OrderRepository orderRepository, AddressRepository addressRepository, OrderItemRepository orderItemRepository) {
+    private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
+    public OrderServiceImpl(OrderRepository orderRepository, AddressRepository addressRepository, OrderItemRepository orderItemRepository, CartRepository cartRepository, CartItemRepository cartItemRepository) {
         this.orderRepository = orderRepository;
         this.addressRepository = addressRepository;
         this.orderItemRepository = orderItemRepository;
+        this.cartRepository = cartRepository;
+        this.cartItemRepository = cartItemRepository;
     }
 
     @Override
@@ -38,16 +40,17 @@ public class OrderServiceImpl implements OrderService {
         }
         Address address = addressRepository.save(shippingAddress);
 
-        // brand 1 => 4 shirt
-        // brand 2 => 3 pants
-        // brand 3 => 1 watch
-
         Map<Long, List<CartItem>> itemBySeller = cart.getCartItems().stream()
                 .collect(Collectors.groupingBy(item -> item.getProduct()
                         .getSeller().getId()));
 
         Set<Order> orders = new HashSet<>();
-        for(Map.Entry<Long, List<CartItem>> entry:itemBySeller.entrySet()){
+        
+        // Lấy timestamp hiện tại cho phần chung của orderId
+        long timestamp = System.currentTimeMillis();
+        int orderCounter = 0; // Số đếm để đảm bảo không trùng ID trong cùng một phiên
+        
+        for(Map.Entry<Long, List<CartItem>> entry : itemBySeller.entrySet()){
             Long sellerId = entry.getKey();
             List<CartItem> items = entry.getValue();
 
@@ -57,6 +60,15 @@ public class OrderServiceImpl implements OrderService {
             int totalItem = items.stream().mapToInt(CartItem::getQuantity).sum();
 
             Order createdOrder = new Order();
+            
+            // Tạo orderId duy nhất cho mỗi đơn hàng
+            String uniqueOrderId = String.format("ORD-%s-%d-%d-%d", 
+                    new SimpleDateFormat("yyyyMMdd").format(new Date()),
+                    user.getId(), 
+                    sellerId,
+                    timestamp + (orderCounter++));  // Đảm bảo không trùng lặp
+                    
+            createdOrder.setOrderId(uniqueOrderId);
             createdOrder.setUser(user);
             createdOrder.setSellerId(sellerId);
             createdOrder.setTotalPrice(totalOrderPrice);
@@ -71,7 +83,7 @@ public class OrderServiceImpl implements OrderService {
 
             List<OrderItem> orderItems = new ArrayList<>();
 
-            for(CartItem item:items){
+            for(CartItem item : items){
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrder(savedOrder);
                 orderItem.setPrice(item.getPrice());
@@ -130,6 +142,70 @@ public class OrderServiceImpl implements OrderService {
         return orderItemRepository.findById(id).orElseThrow(()->
                 new Exception("order item not exits .."));
     }
+
+    @Override
+    public Set<Order> createOrderWithSelectedProducts(User user, Address shippingAddress, Cart cart, List<Long> productIds) {
+        // Lọc các CartItem theo productIds
+        List<CartItem> selectedItems = cart.getCartItems().stream()
+                .filter(item -> productIds.contains(item.getProduct().getId()))
+                .toList();
+
+        // Tạo một Cart tạm thời chỉ chứa các sản phẩm được chọn
+        Cart tempCart = new Cart();
+        tempCart.setUser(user);
+        tempCart.setCartItems(new HashSet<>(selectedItems));
+
+        // Tính lại tổng giá
+        int totalPrice = selectedItems.stream()
+                .mapToInt(CartItem::getPrice)
+                .sum();
+        tempCart.setTotalPrice(totalPrice);
+
+        int totalItems = selectedItems.stream()
+                .mapToInt(CartItem::getQuantity)
+                .sum();
+        tempCart.setTotalItem(totalItems);
+
+        // Gọi phương thức createOrder với giỏ hàng tạm thời
+        return createOrder(user, shippingAddress, tempCart);
+    }
+
+//    @Override
+//    public void clearCartAfterOrder(User user, Set<Order> orders) {
+//        Cart cart = cartRepository.findByUserId(user.getId());
+//
+//        // Xác định các sản phẩm đã được đặt hàng
+//        Set<Long> orderedProductIds = new HashSet<>();
+//        for (Order order : orders) {
+//            for (OrderItem orderItem : order.getOrderItems()) {
+//                orderedProductIds.add(orderItem.getProduct().getId());
+//            }
+//        }
+//
+//        // Xóa các CartItem tương ứng
+//        List<CartItem> itemsToRemove = cart.getCartItems().stream()
+//                .filter(item -> orderedProductIds.contains(item.getProduct().getId()))
+//                .toList();
+//
+//        for (CartItem item : itemsToRemove) {
+//            cart.getCartItems().remove(item);
+//            cartItemRepository.delete(item);
+//        }
+//
+//        // Cập nhật lại tổng giá giỏ hàng
+//        int totalPrice = 0;
+//        int totalItem = 0;
+//
+//        for (CartItem cartItem : cart.getCartItems()) {
+//            totalPrice += cartItem.getPrice();
+//            totalItem += cartItem.getQuantity();
+//        }
+//
+//        cart.setTotalPrice(totalPrice);
+//        cart.setTotalItem(totalItem);
+//
+//        cartRepository.save(cart);
+//    }
 
 
 }

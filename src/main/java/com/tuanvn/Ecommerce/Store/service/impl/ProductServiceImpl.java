@@ -21,6 +21,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+
+
 @Service
 @RequiredArgsConstructor
 
@@ -137,7 +139,7 @@ public class    ProductServiceImpl implements com.tuanvn.Ecommerce.Store.service
             }
             // Filter by size
             if(sizes != null && !sizes.isEmpty() ){
-                predicates.add(criteriaBuilder.equal(root.get("size"), sizes));
+                predicates.add(criteriaBuilder.equal(root.get("Sizes"), sizes));
             }
             if(minPrice != null){
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("sellingPrice"),minPrice));

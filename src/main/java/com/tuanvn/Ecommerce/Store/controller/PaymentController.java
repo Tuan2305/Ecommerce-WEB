@@ -1,10 +1,15 @@
 package com.tuanvn.Ecommerce.Store.controller;
 
+import com.stripe.exception.StripeException;
+import com.stripe.model.Charge;
+import com.stripe.model.checkout.Session;
+import com.tuanvn.Ecommerce.Store.config.StripeConfig;
+import com.tuanvn.Ecommerce.Store.domain.PaymentMethod;
 import com.tuanvn.Ecommerce.Store.domain.PaymentOrderStatus;
-import com.tuanvn.Ecommerce.Store.response.PayOSPaymentResponse;
 import com.tuanvn.Ecommerce.Store.modal.Order;
 import com.tuanvn.Ecommerce.Store.modal.PaymentOrder;
 import com.tuanvn.Ecommerce.Store.modal.User;
+import com.tuanvn.Ecommerce.Store.request.StripeChargeRequest;
 import com.tuanvn.Ecommerce.Store.response.ApiResponse;
 import com.tuanvn.Ecommerce.Store.service.*;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +21,6 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/payment")
@@ -26,86 +30,221 @@ public class PaymentController {
     private final PaymentService paymentService;
     private final UserService userService;
     private final OrderService orderService;
-    private final TransactionService transactionService;
 
-    public PaymentController(PaymentService paymentService, UserService userService, OrderService orderService, TransactionService transactionService) {
+    public PaymentController(PaymentService paymentService, UserService userService, OrderService orderService, TransactionService transactionService, StripeConfig stripeConfig) {
         this.paymentService = paymentService;
         this.userService = userService;
         this.orderService = orderService;
         this.transactionService = transactionService;
+        this.stripeConfig = stripeConfig;
+    }
+
+    private final TransactionService transactionService;
+    private final StripeConfig stripeConfig;
+
+    /**
+     * Lấy thông tin cấu hình Stripe
+     */
+    @GetMapping("/stripe-config")
+    public ResponseEntity<Map<String, Object>> getStripeConfig() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("publicKey", stripeConfig.getPublicKey());
+        response.put("currency", "VND");
+        
+        return ResponseEntity.ok(response);
     }
 
     /**
-     * Endpoint to create a PayOS payment link for an order.
-     * @param orderId The ID of the order to be paid.
-     * @param jwt The authorization token of the user.
-     * @return The PayOS payment response containing the payment URL.
-     * @throws Exception If an error occurs while generating the payment URL.
+     * Tạo một phiên thanh toán Stripe cho đơn hàng
      */
-    @GetMapping("/payos")
-    public ResponseEntity<PayOSPaymentResponse> createPayOSPayment(
+    @GetMapping("/stripe-checkout")
+    public ResponseEntity<?> createStripeCheckout(
             @RequestParam Long orderId,
             @RequestHeader("Authorization") String jwt) throws Exception {
 
         User user = userService.findUserByJwtToken(jwt);
         Order order = orderService.findOrderById(orderId);
 
-        // Validate that the order belongs to the user
+        // Kiểm tra quyền sở hữu đơn hàng
         if (!order.getUser().getId().equals(user.getId())) {
             throw new Exception("Order does not belong to authenticated user");
         }
 
-        // Get amount
+        // Lấy tổng số tiền
         Long amount = (long) order.getTotalPrice();
 
-        // Create PayOS payment link
-        PayOSPaymentResponse response = paymentService.createPayOSPaymentLink(user, amount, orderId);
+        // Tạo checkout session URL
+        String checkoutUrl = paymentService.createStripeCheckoutSession(user, amount, orderId);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("checkoutUrl", checkoutUrl);
+        response.put("amount", amount);
+        response.put("orderId", orderId);
+
         return ResponseEntity.ok(response);
     }
 
     /**
-     * Endpoint to process the return from PayOS after payment.
-     * @param orderId The ID of the order.
-     * @param paymentId The payment ID from PayOS.
-     * @param status The status of the payment.
-     * @return A redirect to the frontend success or cancel page.
+     * Xử lý thanh toán trực tiếp với Stripe Charge
      */
-    @GetMapping("/payos-return")
-    public ResponseEntity<String> processPayOSReturn(
-            @RequestParam(required = false) Long orderId,
-            @RequestParam(required = false) String paymentId,
-            @RequestParam(required = false) String status) {
+    @PostMapping("/stripe-charge")
+    public ResponseEntity<?> createStripeCharge(
+            @RequestBody StripeChargeRequest chargeRequest,
+            @RequestHeader("Authorization") String jwt) throws Exception {
+        
+        User user = userService.findUserByJwtToken(jwt);
+        
+        // Nếu không có token, sử dụng token test
+        if (chargeRequest.getStripeToken() == null || chargeRequest.getStripeToken().isEmpty()) {
+            chargeRequest.setStripeToken("tok_visa"); // Token test cho thanh toán thành công
+        }
+        
+        // Nếu không có email, sử dụng email của người dùng
+        if (chargeRequest.getStripeEmail() == null || chargeRequest.getStripeEmail().isEmpty()) {
+            chargeRequest.setStripeEmail(user.getEmail());
+        }
+        
+        try {
+            Charge charge = paymentService.createStripeCharge(chargeRequest);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", charge.getId());
+            response.put("status", charge.getStatus());
+            response.put("amount", charge.getAmount());
+            response.put("currency", charge.getCurrency());
+            response.put("description", charge.getDescription());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            ApiResponse response = new ApiResponse();
+            response.setMessage("Error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+    }
 
-        String redirectUrl;
+    /**
+     * Kiểm tra trạng thái phiên thanh toán Stripe
+     */
+    @GetMapping("/stripe/session/{sessionId}")
+    public ResponseEntity<?> checkSessionStatus(@PathVariable String sessionId) {
+        try {
+            Session session = paymentService.retrieveSession(sessionId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("sessionId", session.getId());
+            response.put("status", session.getStatus());
+            response.put("paymentStatus", session.getPaymentStatus());
+            
+            return ResponseEntity.ok(response);
+        } catch (StripeException e) {
+            ApiResponse response = new ApiResponse();
+            response.setMessage("Error retrieving session: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+    }
 
-        if ("PAID".equals(status)) {
-            redirectUrl = "http://localhost:3000/payment/success?orderId=" + orderId;
-        } else {
-            redirectUrl = "http://localhost:3000/payment/cancel?orderId=" + orderId;
+    /**
+     * Xử lý thanh toán thành công từ Stripe
+     */
+    @GetMapping("/stripe-success")
+    public ResponseEntity<String> handleStripeSuccess(
+            @RequestParam Long orderId,
+            @RequestParam(required = false) String session_id) {
+
+        PaymentOrder paymentOrder = paymentService.getPaymentOrderById(String.valueOf(orderId));
+        if (paymentOrder != null) {
+            paymentOrder.setStatus(PaymentOrderStatus.SUCCESS);
+            paymentService.proceedPaymentOrder(paymentOrder, session_id, session_id);
         }
 
+        String redirectUrl = "http://localhost:3000/payment/success?orderId=" + orderId;
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header("Location", redirectUrl)
+                .build();
+    }
+    /**
+     * Lấy thông tin chi tiết đơn hàng Stripe
+     */
+    @GetMapping("/stripe-order/{orderId}")
+    public ResponseEntity<?> getStripeOrderDetails(
+            @PathVariable Long orderId,
+            @RequestHeader("Authorization") String jwt) throws Exception {
+
+        User user = userService.findUserByJwtToken(jwt);
+        Order order = orderService.findOrderById(orderId);
+
+        // Kiểm tra quyền sở hữu đơn hàng
+        if (!order.getUser().getId().equals(user.getId())) {
+            ApiResponse errorResponse = new ApiResponse();
+            errorResponse.setMessage("Order does not belong to authenticated user");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+        }
+
+        PaymentOrder paymentOrder = paymentService.getPaymentOrderById(String.valueOf(orderId));
+        if (paymentOrder == null) {
+            ApiResponse errorResponse = new ApiResponse();
+            errorResponse.setMessage("Payment order not found");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        }
+
+        // Lấy thông tin phiên Stripe nếu có
+        Session stripeSession = null;
+        String sessionId = paymentOrder.getPaymentLinkId();
+        if (sessionId != null && paymentOrder.getPaymentMethod() == PaymentMethod.STRIPE) {
+            try {
+                stripeSession = paymentService.retrieveSession(sessionId);
+            } catch (StripeException e) {
+                // Không cần xử lý lỗi vì có thể sessionId không còn hợp lệ
+                System.out.println("Failed to retrieve Stripe session: " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("order", order);
+        response.put("paymentDetails", order.getPaymentDetails());
+        response.put("orderStatus", order.getOrderStatus());
+        response.put("shippingAddress", order.getShippingAddress());
+        response.put("orderItems", order.getOrderItems());
+        response.put("paymentOrder", paymentOrder);
+
+        if (stripeSession != null) {
+            Map<String, Object> stripeDetails = new HashMap<>();
+            stripeDetails.put("sessionId", stripeSession.getId());
+            stripeDetails.put("paymentStatus", stripeSession.getPaymentStatus());
+            stripeDetails.put("status", stripeSession.getStatus());
+            stripeDetails.put("amountTotal", stripeSession.getAmountTotal());
+            stripeDetails.put("currency", stripeSession.getCurrency());
+            response.put("stripeDetails", stripeDetails);
+        }
+
+        return ResponseEntity.ok(response);
+    }
+
+
+    /**
+     * Xử lý hủy thanh toán từ Stripe
+     */
+    @GetMapping("/stripe-cancel")
+    public ResponseEntity<String> handleStripeCancel(@RequestParam Long orderId) {
+        String redirectUrl = "http://localhost:3000/payment/cancel?orderId=" + orderId;
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header("Location", redirectUrl)
                 .build();
     }
 
     /**
-     * Endpoint to handle PayOS webhook for payment notifications.
-     * @param request The HTTP request containing the webhook data.
-     * @return A response indicating success or failure of webhook processing.
+     * Xử lý Stripe webhook
      */
-    @PostMapping("/payos-webhook")
-    public ResponseEntity<ApiResponse> handlePayOSWebhook(
+    @PostMapping("/stripe-webhook")
+    public ResponseEntity<ApiResponse> handleStripeWebhook(
             HttpServletRequest request,
-            @RequestBody Map<String, Object> webhookData,
-            @RequestHeader("Signature") String signature) {
+            @RequestBody String payload,
+            @RequestHeader("Stripe-Signature") String sigHeader) {
 
         ApiResponse response = new ApiResponse();
 
         try {
-            String paymentData = request.getReader().lines().reduce("", (accumulator, actual) -> accumulator + actual);
-
-            boolean processed = paymentService.handlePayOSWebhook(paymentData, signature);
+            boolean processed = paymentService.handleStripeWebhook(payload, sigHeader);
 
             if (processed) {
                 response.setMessage("Webhook processed successfully");
@@ -121,83 +260,36 @@ public class PaymentController {
     }
 
     /**
-     * Endpoint to handle payment cancellation from PayOS.
-     * @param orderId The ID of the order that was cancelled.
-     * @return A response indicating the cancellation status.
+     * Kiểm tra trạng thái thanh toán của đơn hàng
      */
-    @GetMapping("/payos-cancel")
-    public ResponseEntity<String> handlePayOSCancel(@RequestParam Long orderId) {
-        String redirectUrl = "http://localhost:3000/payment/cancel?orderId=" + orderId;
-
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .header("Location", redirectUrl)
-                .build();
-    }
-
-    @PostMapping("/test-payos")
-    public ResponseEntity<?> testPayOSPayment(
-            @RequestHeader("Authorization") String jwt,
-            @RequestBody Map<String, Object> testData) throws Exception {
-
-        // Get authenticated user
+    @GetMapping("/status/{orderId}")
+    public ResponseEntity<?> checkPaymentStatus(
+            @PathVariable Long orderId,
+            @RequestHeader("Authorization") String jwt) throws Exception {
+        
         User user = userService.findUserByJwtToken(jwt);
-
-        // Extract test parameters
-        Long amount = Long.valueOf(testData.getOrDefault("amount", 10000).toString());
-
-        // Đảm bảo description không vượt quá 25 ký tự
-        String description = testData.getOrDefault("description", "Test payment").toString();
-        if (description.length() > 25) {
-            description = description.substring(0, 25);
+        Order order = orderService.findOrderById(orderId);
+        
+        // Kiểm tra quyền sở hữu đơn hàng
+        if (!order.getUser().getId().equals(user.getId())) {
+            ApiResponse errorResponse = new ApiResponse();
+            errorResponse.setMessage("Order does not belong to authenticated user");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
         }
-
-        // Create a temporary order ID for testing
-        Long tempOrderId = System.currentTimeMillis();
-
-        // Generate PayOS payment link
-        PayOSPaymentResponse paymentResponse = paymentService.createPayOSPaymentLink(user, amount, tempOrderId);
-
-        // Prepare response with payment details
-    Map<String, Object> response = new HashMap<>();
-    response.put("testOrderId", tempOrderId);
-    response.put("amount", amount);
-    response.put("description", description);
-    response.put("paymentUrl", paymentResponse.getData().getPaymentUrl());
-    response.put("paymentLinkId", paymentResponse.getData().getPaymentLinkId());
-    response.put("userDetails", Map.of(
-        "name", user.getFullName(),
-        "email", user.getEmail(),
-        "phone", user.getMobile()
-    ));
-    response.put("instructions", "Open the paymentUrl in browser to proceed with test payment");
-    
-    return ResponseEntity.ok(response);
-}
-
-/**
- * Endpoint to check status of a test payment
- */
-@GetMapping("/test-payos/status/{paymentLinkId}")
-public ResponseEntity<?> checkTestPaymentStatus(
-        @PathVariable String paymentLinkId,
-        @RequestHeader("Authorization") String jwt) throws Exception {
-    
-    // Get payment order by payment link ID
-    PaymentOrder paymentOrder = paymentService.getPaymentOrderByPaymentId(paymentLinkId);
-    
-    Map<String, Object> response = new HashMap<>();
-    response.put("paymentLinkId", paymentLinkId);
-    
-    if (paymentOrder != null) {
+        
+        PaymentOrder paymentOrder = paymentService.getPaymentOrderById(String.valueOf(orderId));
+        if (paymentOrder == null) {
+            ApiResponse errorResponse = new ApiResponse();
+            errorResponse.setMessage("Payment order not found");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("orderId", orderId);
         response.put("status", paymentOrder.getStatus());
         response.put("paymentMethod", paymentOrder.getPaymentMethod());
         response.put("amount", paymentOrder.getAmount());
-    } else {
-        response.put("status", "UNKNOWN");
-        response.put("message", "Payment not found or not completed yet");
+        
+        return ResponseEntity.ok(response);
     }
-    
-    return ResponseEntity.ok(response);
-}
-
 }

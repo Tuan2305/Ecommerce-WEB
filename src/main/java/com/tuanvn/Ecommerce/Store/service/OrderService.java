@@ -15,4 +15,6 @@ public interface OrderService {
     Order updateOrderStatus(Long orderId, OrderStatus orderStatus) throws Exception;
     Order cancelOrder(Long orderId, User user) throws Exception;
     OrderItem getOrderItemById(Long id) throws Exception;
+    Set<Order> createOrderWithSelectedProducts(User user, Address shippingAddress, Cart cart, List<Long> productIds);
+    // void clearCartAfterOrder(User user, Set<Order> orders);
 }

@@ -110,6 +110,17 @@
 			<artifactId>payos-java</artifactId>
 			<version>1.0.1</version>
 		</dependency>
+		<!-- Stripe Java Library -->
+		<dependency>
+			<groupId>com.stripe</groupId>
+			<artifactId>stripe-java</artifactId>
+			<version>22.29.0</version>
+		</dependency>
+		<dependency>
+			<groupId>me.paulschwarz</groupId>
+			<artifactId>spring-dotenv</artifactId>
+			<version>3.0.0</version>
+		</dependency>
 
 	</dependencies>
 

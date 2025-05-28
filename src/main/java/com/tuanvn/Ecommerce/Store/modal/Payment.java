@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode
 public class Payment {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private String paymentId;         // Payment ID from PayOS

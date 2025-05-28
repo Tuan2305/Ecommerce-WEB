@@ -1,14 +1,16 @@
 package com.tuanvn.Ecommerce.Store.service.impl;
 
-import com.tuanvn.Ecommerce.Store.modal.Cart;
-import com.tuanvn.Ecommerce.Store.modal.CartItem;
-import com.tuanvn.Ecommerce.Store.modal.Product;
-import com.tuanvn.Ecommerce.Store.modal.User;
+import com.tuanvn.Ecommerce.Store.modal.*;
 import com.tuanvn.Ecommerce.Store.repository.CartItemRepository;
 import com.tuanvn.Ecommerce.Store.repository.CartRepository;
 import com.tuanvn.Ecommerce.Store.service.CartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -23,52 +25,127 @@ public class CartServiceImpl implements CartService {
     }
 
     @Override
-    public CartItem addCartItem(User user, Product product, String size, int quantity) {
-        Cart cart= findUserCart(user);
-        CartItem isPresent = cartItemRepository.findByCartAndProductAndSize(cart,product,size);
+public CartItem addCartItem(User user, Product product, String size, int quantity) {
+    Cart cart = findUserCart(user);
+    CartItem isPresent = cartItemRepository.findByCartAndProductAndSize(cart, product, size);
 
-        if(isPresent == null){
-            CartItem cartItem = new CartItem();
-            cartItem.setProduct(product);
-            cartItem.setQuantity(quantity);
-            cartItem.setUserId(user.getId());
-            cartItem.setSize(size);
-
-            int totalPriceAll = quantity * product.getSellingPrice();
-            cartItem.setSellingPrice(totalPriceAll);
-            cartItem.setPrice(quantity*product.getPrice());
-
-            cart.getCartItems().add(cartItem);
-            cartItem.setCart(cart);
-
-            return cartItemRepository.save(cartItem);
-        }
-
-        return isPresent;
+    if(isPresent == null){
+        CartItem cartItem = new CartItem();
+        cartItem.setProduct(product);
+        cartItem.setQuantity(quantity);
+        cartItem.setUserId(user.getId());
+        cartItem.setSize(size);
+        
+        // Lưu giá đơn vị của sản phẩm * số lượng
+        int itemTotal = product.getPrice() * quantity;
+        cartItem.setPrice(itemTotal);
+        
+        // Giá bán cuối cùng (có thể giảm giá)
+        int sellingTotal = product.getSellingPrice() * quantity;
+        cartItem.setSellingPrice(sellingTotal);
+        
+        cart.getCartItems().add(cartItem);
+        cartItem.setCart(cart);
+        
+        System.out.println("Thêm sản phẩm: " + product.getTitle() + 
+                         ", Đơn giá: " + product.getPrice() + 
+                         ", Số lượng: " + quantity + 
+                         ", Thành tiền: " + itemTotal);
+        
+        return cartItemRepository.save(cartItem);
     }
+    
+    // Nếu sản phẩm đã có trong giỏ, cập nhật số lượng và giá
+    int newQuantity = isPresent.getQuantity() + quantity;
+    isPresent.setQuantity(newQuantity);
+    
+    // Cập nhật giá dựa trên số lượng mới
+    isPresent.setPrice(product.getPrice() * newQuantity);
+    isPresent.setSellingPrice(product.getSellingPrice() * newQuantity);
+    
+    System.out.println("Cập nhật sản phẩm: " + product.getTitle() + 
+                     ", Đơn giá: " + product.getPrice() + 
+                     ", Số lượng mới: " + newQuantity + 
+                     ", Thành tiền mới: " + (product.getPrice() * newQuantity));
+    
+    return cartItemRepository.save(isPresent);
+}
 
 
     @Override
     public Cart findUserCart(User user) {
-
         Cart cart = cartRepository.findByUserId(user.getId());
-
-        int totalPriceAll = 0;
-        int totalDiscountedPrice = 0;
+        
+        // Reset calculations to ensure clean totals
+        int totalPrice = 0;
         int totalItem = 0;
 
+        // Tính đúng theo logic frontend: đơn giá * số lượng
         for(CartItem cartItem: cart.getCartItems()){
-            totalPriceAll += cartItem.getPrice(); // có thể trả về null ở đây
-            totalDiscountedPrice += cartItem.getSellingPrice(); // và null ở đây
-            totalItem +=cartItem.getQuantity();
+            // Tránh null pointer bằng cách dùng null check
+            int itemPrice = cartItem.getProduct().getPrice(); // Lấy đơn giá từ sản phẩm
+            int quantity = cartItem.getQuantity();
+            
+            // Tính tổng giá cho từng mặt hàng (đơn giá * số lượng)
+            int itemTotal = itemPrice * quantity;
+            
+            // Cập nhật cartItem với giá đã tính
+            cartItem.setPrice(itemTotal);
+            
+            // Cộng dồn vào tổng giỏ hàng
+            totalPrice += itemTotal;
+            totalItem += quantity;
+            
+            System.out.println("Cart item: " + cartItem.getProduct().getTitle() + 
+                            ", Đơn giá: " + itemPrice + 
+                            ", Số lượng: " + quantity + 
+                            ", Thành tiền: " + itemTotal);
+        }
+        
+        // Cập nhật tổng của giỏ hàng
+        cart.setTotalPrice(totalPrice);
+        cart.setTotalItem(totalItem);
+        
+        System.out.println("Tổng giỏ hàng (chưa phí ship): " + totalPrice);
+        
+        return cart;
+    }
+
+    @Override
+    public void clearCartAfterOrder(User user, Set<Order> orders) {
+        Cart cart = cartRepository.findByUserId(user.getId());
+
+        // Xác định các sản phẩm đã được đặt hàng
+        Set<Long> orderedProductIds = new HashSet<>();
+        for (Order order : orders) {
+            for (OrderItem orderItem : order.getOrderItems()) {
+                orderedProductIds.add(orderItem.getProduct().getId());
+            }
         }
 
-        cart.setTotalPrice(totalPriceAll);
-        cart.setTotalItem(totalItem);
-        cart.setTotalSellingPrice(totalDiscountedPrice);
-        cart.setDiscount(calculateDiscountPercentage(totalPriceAll, totalDiscountedPrice));
+        // Xóa các CartItem tương ứng
+        List<CartItem> itemsToRemove = cart.getCartItems().stream()
+                .filter(item -> orderedProductIds.contains(item.getProduct().getId()))
+                .collect(Collectors.toList());
 
-        return cart;
+        for (CartItem item : itemsToRemove) {
+            cart.getCartItems().remove(item);
+            cartItemRepository.delete(item);
+        }
+
+        // Cập nhật lại tổng giá giỏ hàng
+        int totalPrice = 0;
+        int totalItem = 0;
+
+        for (CartItem cartItem : cart.getCartItems()) {
+            totalPrice += cartItem.getPrice();
+            totalItem += cartItem.getQuantity();
+        }
+
+        cart.setTotalPrice(totalPrice);
+        cart.setTotalItem(totalItem);
+
+        cartRepository.save(cart);
     }
 
 

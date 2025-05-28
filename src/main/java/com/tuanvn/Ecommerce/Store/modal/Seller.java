@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode // Tạo phương thức equals() và hashCode(), giúp so sánh các đối tượng Seller.
 public class Seller {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     //Thông tin cá nhân của người bán

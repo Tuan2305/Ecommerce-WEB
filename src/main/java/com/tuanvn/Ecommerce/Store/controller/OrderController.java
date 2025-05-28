@@ -34,30 +34,50 @@ public class OrderController {
         this.paymentService = paymentService;
     }
 
-    @PostMapping()
-    public ResponseEntity<PaymentLinkResponse> createOrderHandler(
-            @RequestBody Address shippingAddress,
-            @RequestParam(name = "paymentMethod", required = false, defaultValue = "PAYOS") PaymentMethod paymentMethod,
-            @RequestHeader("Authorization") String jwt) throws Exception {
+@PostMapping()
+public ResponseEntity<PaymentLinkResponse> createOrderHandler(
+        @RequestBody Address shippingAddress,
+        @RequestParam(name = "productIds", required = false) List<Long> productIds,
+        @RequestParam(name = "paymentMethod", required = false, defaultValue = "STRIPE") PaymentMethod paymentMethod,
+        @RequestHeader("Authorization") String jwt) throws Exception {
 
-        User user = userService.findUserByJwtToken(jwt);
-        Cart cart = cartService.findUserCart(user);
-        Set<Order> orders = orderService.createOrder(user, shippingAddress, cart);
-
-
-        PaymentOrder paymentOrder = paymentService.createOrder(user, orders);
-        PaymentLinkResponse res = new PaymentLinkResponse();
-
-        if (paymentMethod.equals(PaymentMethod.PAYOS)) {
-            PayOSPaymentResponse payOSResponse = paymentService.createPayOSPaymentLink(
-                    user, paymentOrder.getAmount(), paymentOrder.getId());
-
-            res.setPayment_link_url(payOSResponse.getData().getPaymentUrl());
-            res.setPayment_link_id(String.valueOf(payOSResponse.getData().getPaymentLinkId()));
+    User user = userService.findUserByJwtToken(jwt);
+    Cart cart = cartService.findUserCart(user);
+    
+    // Nếu không có sản phẩm nào được chỉ định, sử dụng toàn bộ giỏ hàng
+    Set<Order> orders;
+    if (productIds != null && !productIds.isEmpty()) {
+        orders = orderService.createOrderWithSelectedProducts(user, shippingAddress, cart, productIds);
+    } else {
+        if (cart.getCartItems() == null || cart.getCartItems().isEmpty()) {
+            throw new Exception("Cart is empty");
         }
-
-        return new ResponseEntity<>(res, HttpStatus.OK);
+        orders = orderService.createOrder(user, shippingAddress, cart);
     }
+    
+    PaymentOrder paymentOrder = paymentService.createOrder(user, orders, paymentMethod);
+    
+    // Sau khi đặt hàng thành công, xóa các sản phẩm đã đặt khỏi giỏ hàng
+    cartService.clearCartAfterOrder(user, orders);
+    
+    // Lấy Order ID đầu tiên để trả về
+    Long primaryOrderId = null;
+    if (!orders.isEmpty()) {
+        primaryOrderId = orders.iterator().next().getId();
+    }
+    
+    PaymentLinkResponse res = new PaymentLinkResponse();
+    res.setAmount(paymentOrder.getAmount());
+    res.setOrderId(primaryOrderId); // Thêm Order ID vào response
+    res.setPaymentOrderId(paymentOrder.getId()); // ID của PaymentOrder
+    
+    // Tạo session thanh toán với Stripe
+    String checkoutUrl = paymentService.createStripeCheckoutSession(user, paymentOrder.getAmount(), paymentOrder.getId());
+    res.setPayment_link_url(checkoutUrl);
+    res.setPayment_link_id(paymentOrder.getPaymentLinkId());
+
+    return new ResponseEntity<>(res, HttpStatus.OK);
+}
     @GetMapping("/user")
     public ResponseEntity<List<Order>> usersOrderHistoryHandler(
             @RequestHeader("Authorization")
