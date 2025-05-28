@@ -32,15 +32,15 @@ public class SellerController {
 
     private final SellerService sellerService;
     private final VerificationCodeRepository verificationCodeRepository;
-    private final AuthService authService;
-    private final EmailService emailService;
+    private final AuthService AuthService;
+    private final EmailService EmailService;
     private final SellerReportService sellerReportService;
 
     public SellerController(SellerService sellerService, VerificationCodeRepository verificationCodeRepository, AuthService authService, EmailService emailService, SellerReportService sellerReportService) {
         this.sellerService = sellerService;
         this.verificationCodeRepository = verificationCodeRepository;
-        this.authService = authService;
-        this.emailService = emailService;
+        this.authService = AuthService;
+        this.emailService = EmailService;
         this.sellerReportService = sellerReportService;
     }
 
